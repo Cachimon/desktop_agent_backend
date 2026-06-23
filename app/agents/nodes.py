@@ -7,22 +7,33 @@ from app.tools.sandbox import execute_sandboxed
 async def plan_node(state: AgentState) -> dict:
     messages = state.get("messages", [])
     user_message = messages[-1] if messages else {}
-    content = user_message.get("content", "") if isinstance(user_message, dict) else str(user_message)
+    content = (
+        user_message.get("content", "")
+        if isinstance(user_message, dict)
+        else str(user_message)
+    )
 
     skill_hint = state.get("skill_hint")
-
+    # TODO：只截取200个字符吗
     plan = f"Process user request: {content[:200]}"
     if skill_hint:
         plan = f"Use skill '{skill_hint}' to handle: {content[:200]}"
 
-    return {"current_plan": plan, "hitl_required": False, "hitl_context": None, "error": None}
+    return {
+        "current_plan": plan,
+        "hitl_required": False,
+        "hitl_context": None,
+        "error": None,
+    }
 
 
 async def execute_node(state: AgentState) -> dict:
+    # TODO：没有用到
     plan = state.get("current_plan", "")
     tool_results = []
 
     try:
+        # TODO：执行啥了？？？
         return {
             "tool_results": tool_results,
             "hitl_required": False,
@@ -50,17 +61,29 @@ async def summarize_node(state: AgentState) -> dict:
     error = state.get("error")
 
     if error:
-        return {"messages": state.get("messages", []) + [{"role": "assistant", "content": f"Error: {error}"}]}
+        return {
+            "messages": state.get("messages", [])
+            + [{"role": "assistant", "content": f"Error: {error}"}]
+        }
 
     summary = "Task completed successfully."
     if tool_results:
-        summary = f"Task completed. Results: {len(tool_results)} operation(s) performed."
+        summary = (
+            f"Task completed. Results: {len(tool_results)} operation(s) performed."
+        )
 
-    return {"messages": state.get("messages", []) + [{"role": "assistant", "content": summary}]}
+    return {
+        "messages": state.get("messages", [])
+        + [{"role": "assistant", "content": summary}]
+    }
 
 
 async def human_interrupt_node(state: AgentState) -> dict:
-    return state
+    # TODO：hitl_required不是true吗，为啥没有hitl_context
+    return {
+        "hitl_required": False,
+        "hitl_context": None,
+    }
 
 
 def should_interrupt(state: AgentState) -> bool:

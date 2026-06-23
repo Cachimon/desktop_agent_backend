@@ -145,6 +145,7 @@ class AuthRepo(BaseRepository[UserAuth]):
         window_start = now - timedelta(hours=window_hours)
         stmt = select(func.count(VerificationCode.email.distinct())).select_from(VerificationCode).where(
             and_(
+                VerificationCode.ip_address == ip_address,  # FIX：补上缺失的条件
                 VerificationCode.created_at >= window_start,
             )
         )

@@ -29,7 +29,7 @@ def build_graph(checkpointer=None) -> StateGraph:
         {True: "human_confirm", False: "summarize"},
     )
 
-    builder.add_edge("human_confirm", END)
+    builder.add_edge("human_confirm", "execute")
 
     builder.add_conditional_edges(
         "summarize",
@@ -37,5 +37,7 @@ def build_graph(checkpointer=None) -> StateGraph:
         {True: "plan", False: END},
     )
 
-    graph = builder.compile(checkpointer=checkpointer)
+    graph = builder.compile(
+        checkpointer=checkpointer, interrupt_before=["human_confirm"]
+    )
     return graph

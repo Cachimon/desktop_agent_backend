@@ -19,7 +19,7 @@ class ConversationResponse(BaseModel):
 
 
 class MessageCreate(BaseModel):
-    role: Literal["user", "assistant", "system"]
+    role: Literal["user"]
     content: str
     tool_calls: list | None = None
 
@@ -29,7 +29,9 @@ class MessageResponse(BaseModel):
     conversation_id: str
     role: str
     content: str
-    tool_calls: list | None
+    name: str | None = None
+    tool_calls: list | None = None
+    tool_call_id: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

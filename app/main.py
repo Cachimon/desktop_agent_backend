@@ -18,8 +18,18 @@ async def lifespan(application: FastAPI):
     settings = get_settings()
     setup_logging(settings.app.LOG_LEVEL)
     logger.info("application_starting", host=settings.app.HOST, port=settings.app.PORT)
+
+    from app.agents.checkpointer import get_checkpointer
+    from app.agents.graph import build_graph
+
+    checkpointer = await get_checkpointer()
+    application.state.graph = build_graph(checkpointer=checkpointer)
+    logger.info("langgraph_initialized")
+
     yield
+
     from app.models.base import engine
+
     await engine.dispose()
     logger.info("application_stopped")
 
@@ -52,15 +62,23 @@ def create_app() -> FastAPI:
 
     @application.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):
-        logger.warning("app_exception", error_code=exc.error_code, status_code=exc.status_code, message=exc.message)
+        logger.warning(
+            "app_exception",
+            error_code=exc.error_code,
+            status_code=exc.status_code,
+            message=exc.message,
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_dict(),
         )
 
     @application.exception_handler(PydanticValidationError)
-    async def validation_exception_handler(request: Request, exc: PydanticValidationError):
+    async def validation_exception_handler(
+        request: Request, exc: PydanticValidationError
+    ):
         from app.utils.trace import get_trace_id
+
         logger.warning("validation_error", errors=exc.errors())
         return JSONResponse(
             status_code=400,
@@ -75,7 +93,10 @@ def create_app() -> FastAPI:
     @application.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         from app.utils.trace import get_trace_id
-        logger.error("unhandled_exception", exc_type=type(exc).__name__, exc_message=str(exc))
+
+        logger.error(
+            "unhandled_exception", exc_type=type(exc).__name__, exc_message=str(exc)
+        )
         return JSONResponse(
             status_code=500,
             content={

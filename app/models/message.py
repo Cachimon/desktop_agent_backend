@@ -13,11 +13,11 @@ class Message(Base):
     conversation_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[str] = mapped_column(String(10), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    tool_calls: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tool_calls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    tool_call_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
-    __table_args__ = (
-        Index("idx_conversation", "conversation_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_conversation", "conversation_id", "created_at"),)

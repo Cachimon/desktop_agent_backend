@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 
 import aiosmtplib
 from email.mime.text import MIMEText
+
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -32,7 +34,7 @@ from app.utils.exceptions import (
     InvalidCode,
     InvalidRefreshToken,
     NotAuthenticated,
-    TokenReuseDetected,
+    TokenReuseDetected, RateLimitExceeded, AppException,
 )
 
 
@@ -40,21 +42,32 @@ async def send_verification_code(email: str, client_ip: str, session: AsyncSessi
     settings = get_settings()
     repo = AuthRepo(session)
 
+    # 1. 安全检查：IP 限流
     await check_ip_rate_limit(client_ip, session)
     await check_ip_anomaly(client_ip, session)
 
+    # 2. 业务检查：邮箱发送频率限制
+    # FIX：异常处理逻辑合理化
     try:
         await check_send_code_rate_limit(email, session)
-    except Exception:
-        return {"message": "If the email is registered, a verification code has been sent"}
+    except RateLimitExceeded as e:
+        raise e
+    except Exception as e:
+        # 其他未知异常应该抛出，而不是吞掉
+        logger.error("Rate limit check failed", error=str(e))
+        raise AppException(message="System Error")
 
+    # 3. 生成验证码
     code = "".join(secrets.choice("0123456789") for _ in range(settings.auth.VERIFICATION_CODE_LENGTH))
     code_hash = hash_token(code)
     expires_at = datetime.utcnow() + timedelta(minutes=settings.auth.VERIFICATION_CODE_EXPIRE_MINUTES)
 
+    # 4. 存储验证码并发送邮件
     await repo.create_verification_code(email, code_hash, expires_at)
+    # TODO：应该在发送邮件成功后再加的，但是又考虑到并发场景要限制发送。
     await increment_send_code(email, session)
 
+    # 5. 发送邮件（异步）
     try:
         await _send_email(email, code, settings)
     except Exception as e:
@@ -73,61 +86,78 @@ async def send_verification_code(email: str, client_ip: str, session: AsyncSessi
 
 
 async def login(email: str, code: str, client_ip: str, session: AsyncSession) -> dict:
-    settings = get_settings()
-    repo = AuthRepo(session)
+    """
+    用户登录函数，验证用户提供的信息并返回访问和刷新令牌。
 
-    await check_account_lockout(email, session)
+    参数:
+    email (str): 用户的电子邮件地址。
+    code (str): 用户提供的验证码。
+    client_ip (str): 客户端的IP地址。
+    session (AsyncSession): 数据库会话对象。
 
-    vc = await repo.get_latest_valid_code(email)
+    返回:
+    dict: 包含访问令牌、令牌类型、过期时间和用户信息的字典。
+
+    异常:
+    InvalidCode: 验证码无效或已过期。
+    CodeAlreadyUsed: 验证码已被使用。
+    CodeMaxAttemptsExceeded: 验证码尝试次数超过限制。
+    NotAuthenticated: 账户未激活。
+    """
+    settings = get_settings()  # 获取应用配置
+    repo = AuthRepo(session)  # 初始化认证仓库
+
+    await check_account_lockout(email, session)  # 检查账户是否被锁定
+
+    vc = await repo.get_latest_valid_code(email)  # 获取最新的有效验证码
     if not vc:
-        raise InvalidCode(message="Invalid or expired verification code")
+        raise InvalidCode(message="Invalid or expired verification code")  # 验证码无效或过期
 
-    if vc.used_at is not None:
-        raise CodeAlreadyUsed(message="Verification code has already been used")
-
-    if not verify_token_hash(code, vc.code_hash):
-        attempts = await repo.increment_code_attempts(vc.id)
+    if not verify_token_hash(code, vc.code_hash):  # 验证验证码的哈希值
+        attempts = await repo.increment_code_attempts(vc.id)  # 增加验证码尝试次数
         if attempts >= settings.auth.VERIFICATION_CODE_MAX_ATTEMPTS:
-            await repo.invalidate_code(vc.id)
-            raise CodeMaxAttemptsExceeded(message="Maximum attempts exceeded for this code")
-        await increment_login_failure(email, session)
-        raise InvalidCode(message="Invalid verification code")
+            await repo.invalidate_code(vc.id)  # 使验证码失效
+            raise CodeMaxAttemptsExceeded(message="Maximum attempts exceeded for this code")  # 尝试次数超过限制
+        await increment_login_failure(email, session)  # 增加登录失败次数
+        raise InvalidCode(message="Invalid verification code")  # 验证码无效
 
-    await repo.mark_code_used(vc.id)
+    await repo.mark_code_used(vc.id)  # 标记验证码为已使用
 
-    user = await repo.get_by_email(email)
+    user = await repo.get_by_email(email)  # 通过电子邮件获取用户
     if not user:
-        user = await repo.create_user(email)
+        user = await repo.create_user(email)  # 如果用户不存在，则创建新用户
 
     if not user.is_active:
-        raise NotAuthenticated(message="Account is deactivated")
+        # TODO: 未激活的场景有吗？？
+        raise NotAuthenticated(message="Account is deactivated")  # 账户未激活
 
-    access_token = create_access_token(user.id, user.email)
-    refresh_token_str = create_refresh_token()
-    refresh_token_hash = hash_token(refresh_token_str)
+    access_token = create_access_token(user.id, user.email)  # 创建访问令牌
+    refresh_token_str = create_refresh_token()  # 创建刷新令牌
+    refresh_token_hash = hash_token(refresh_token_str)  # 哈希刷新令牌
+    # timedelta 得到两个时间相减的结果，单位是s，第二个数不传，则为0，从而达分到转秒的效果，避免手动计算 * 60
     expires_at = datetime.utcnow() + timedelta(days=settings.auth.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-    await repo.create_refresh_token(user.id, refresh_token_hash, expires_at)
+    await repo.create_refresh_token(user.id, refresh_token_hash, expires_at)  # 创建并存储刷新令牌
 
     await record_audit(
         session, operation="auth_login",
         details={"email": email},
         ip_address=client_ip, user_id=str(user.id),
         risk_level="low", status="completed",
-    )
+    )  # 记录审计日志
 
-    logger.info("user_login", user_id=user.id, email=email)
+    logger.info("user_login", user_id=user.id, email=email)  # 记录登录信息
 
     return {
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": settings.auth.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "access_token": access_token,  # 访问令牌
+        "token_type": "Bearer",  # 令牌类型
+        "expires_in": settings.auth.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 令牌过期时间
         "user": {
-            "id": user.id,
-            "email": user.email,
-            "is_active": user.is_active,
-            "created_at": user.created_at.isoformat(),
+            "id": user.id,  # 用户ID
+            "email": user.email,  # 用户电子邮件
+            "is_active": user.is_active,  # 用户是否激活
+            "created_at": user.created_at.isoformat(),  # 用户创建时间
         },
-        "refresh_token": refresh_token_str,
+        "refresh_token": refresh_token_str,  # 刷新令牌
     }
 
 

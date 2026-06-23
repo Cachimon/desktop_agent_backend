@@ -15,10 +15,3 @@ class HITLConfirmRequest(BaseModel):
     checkpoint_id: str
     decision: Literal["approve", "reject"]
     context: dict | None = None
-
-
-class HITLConfirmResponse(BaseModel):
-    status: str
-    conversation_id: str
-    checkpoint_id: str
-    decision: str
