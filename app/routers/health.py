@@ -7,7 +7,7 @@ from app.services.health_service import HealthService
 router = APIRouter(prefix="/health", tags=["Health"])
 
 
-@router.get("", response_model=HealthResponse)
+@router.get("/", response_model=HealthResponse)
 async def health_check():
     svc = HealthService()
     result = await svc.check_health()

@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -57,8 +58,10 @@ def create_refresh_token() -> str:
 
 
 def hash_token(token: str) -> str:
-    return bcrypt.hashpw(token.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return bcrypt.hashpw(token_hash.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 def verify_token_hash(token: str, token_hash: str) -> bool:
-    return bcrypt.checkpw(token.encode("utf-8"), token_hash.encode("utf-8"))
+    token_hash_intermediate = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return bcrypt.checkpw(token_hash_intermediate.encode("utf-8"), token_hash.encode("utf-8"))
+

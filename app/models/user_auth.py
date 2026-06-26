@@ -27,6 +27,7 @@ class VerificationCode(Base):
     expires_at: Mapped[datetime] = mapped_column(nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(nullable=True)
     attempt_count: Mapped[int] = mapped_column(default=0)
+    ip_address: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     __table_args__ = (

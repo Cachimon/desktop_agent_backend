@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.middleware.auth import get_current_user, validate_csrf
@@ -43,7 +43,7 @@ async def login(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
+        # secure=True,
         samesite="strict",
         path="/api/v1/auth",
         max_age=7 * 24 * 3600,
@@ -55,6 +55,7 @@ async def login(
 async def refresh(
     request: Request,
     response: Response,
+    user_id: int = Body(embed=True),
     _csrf: None = Depends(validate_csrf),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -63,7 +64,7 @@ async def refresh(
         raise InvalidRefreshToken(message="No refresh token provided")
 
     try:
-        result = await auth_service.refresh_token(refresh_token_str, session)
+        result = await auth_service.refresh_token(user_id, refresh_token_str, session)
     except InvalidRefreshToken:
         try:
             await auth_service.detect_token_reuse(refresh_token_str, session)
@@ -76,7 +77,7 @@ async def refresh(
         key="refresh_token",
         value=new_refresh_token,
         httponly=True,
-        secure=True,
+        # secure=True,
         samesite="strict",
         path="/api/v1/auth",
         max_age=7 * 24 * 3600,

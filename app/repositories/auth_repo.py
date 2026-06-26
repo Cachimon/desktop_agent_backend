@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Sequence
 
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,9 +22,9 @@ class AuthRepo(BaseRepository[UserAuth]):
         return await self.create(user)
 
     async def create_verification_code(
-        self, email: str, code_hash: str, expires_at: datetime
+        self, email: str, code_hash: str, expires_at: datetime, client_ip: str,
     ) -> VerificationCode:
-        vc = VerificationCode(email=email, code_hash=code_hash, expires_at=expires_at)
+        vc = VerificationCode(email=email, code_hash=code_hash, expires_at=expires_at, ip_address=client_ip)
         self.session.add(vc)
         await self.session.flush()
         return vc
@@ -72,6 +73,10 @@ class AuthRepo(BaseRepository[UserAuth]):
         await self.session.flush()
         return rt
 
+    async def get_refresh_token_by_user(self, user_id: int) -> Sequence[RefreshToken]:
+        stmt = select(RefreshToken).where(RefreshToken.user_id == user_id and RefreshToken.revoked_at.is_(None))
+        return await self.get_many(stmt)
+
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
         stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
         return await self.get_one(stmt)
@@ -97,13 +102,16 @@ class AuthRepo(BaseRepository[UserAuth]):
     ) -> RateLimit | None:
         stmt = select(RateLimit).where(
             and_(RateLimit.identifier == identifier, RateLimit.action_type == action_type)
-        )
+        ).order_by(RateLimit.window_start.desc()).limit(1)
         return await self.get_one(stmt)
 
     async def upsert_rate_limit(
         self, identifier: str, action_type: str, window_start: datetime
     ) -> RateLimit:
         rl = await self.get_rate_limit(identifier, action_type)
+        if rl:
+            print('upsert_rate_limit  window_start', rl.window_start, window_start)
+            print('upsert_rate_limit  attempt_count', rl.attempt_count)
         if rl and rl.window_start >= window_start:
             rl.attempt_count += 1
         else:
@@ -143,6 +151,7 @@ class AuthRepo(BaseRepository[UserAuth]):
     async def count_emails_for_ip(self, ip_address: str, window_hours: int = 1) -> int:
         now = datetime.utcnow()
         window_start = now - timedelta(hours=window_hours)
+        print("count_emails_for_ip window_start", window_start)
         stmt = select(func.count(VerificationCode.email.distinct())).select_from(VerificationCode).where(
             and_(
                 VerificationCode.ip_address == ip_address,  # FIX：补上缺失的条件

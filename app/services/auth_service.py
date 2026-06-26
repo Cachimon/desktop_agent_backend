@@ -63,7 +63,7 @@ async def send_verification_code(email: str, client_ip: str, session: AsyncSessi
     expires_at = datetime.utcnow() + timedelta(minutes=settings.auth.VERIFICATION_CODE_EXPIRE_MINUTES)
 
     # 4. 存储验证码并发送邮件
-    await repo.create_verification_code(email, code_hash, expires_at)
+    await repo.create_verification_code(email, code_hash, expires_at, client_ip)
     # TODO：应该在发送邮件成功后再加的，但是又考虑到并发场景要限制发送。
     await increment_send_code(email, session)
 
@@ -128,7 +128,6 @@ async def login(email: str, code: str, client_ip: str, session: AsyncSession) ->
         user = await repo.create_user(email)  # 如果用户不存在，则创建新用户
 
     if not user.is_active:
-        # TODO: 未激活的场景有吗？？
         raise NotAuthenticated(message="Account is deactivated")  # 账户未激活
 
     access_token = create_access_token(user.id, user.email)  # 创建访问令牌
@@ -161,21 +160,28 @@ async def login(email: str, code: str, client_ip: str, session: AsyncSession) ->
     }
 
 
-async def refresh_token(old_token: str, session: AsyncSession) -> dict:
+async def refresh_token(user_id: int, old_token: str, session: AsyncSession) -> dict:
     settings = get_settings()
     repo = AuthRepo(session)
 
     token_hash = hash_token(old_token)
-    rt = await repo.get_refresh_token_by_hash(token_hash)
 
-    if not rt or rt.revoked_at is not None or rt.expires_at < datetime.utcnow():
+    records = await repo.get_refresh_token_by_user(user_id)
+    verify_result = None
+    for record in records:
+        is_verify = verify_token_hash(old_token, record.token_hash)
+        if is_verify:
+            verify_result = record
+            break
+
+    if not verify_result or verify_result.expires_at < datetime.utcnow():
         raise InvalidRefreshToken(message="Invalid or expired refresh token")
 
-    user = await repo.get_by_id(rt.user_id)
+    user = await repo.get_by_id(user_id)
     if not user or not user.is_active:
         raise InvalidRefreshToken(message="User account not found or deactivated")
 
-    await repo.revoke_refresh_token(rt.id)
+    await repo.revoke_refresh_token(verify_result.id)
 
     access_token = create_access_token(user.id, user.email)
     new_refresh_token = create_refresh_token()

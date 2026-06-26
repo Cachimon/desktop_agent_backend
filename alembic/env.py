@@ -4,16 +4,18 @@ from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
+from app.config import get_settings
 from app.models.base import Base
 from app.models import Conversation, Message, AuditLog, UserSetting, UserAuth, VerificationCode, RefreshToken, RateLimit
 
 load_dotenv()
 
 config = context.config
+settings = get_settings()
 
 sync_url = os.getenv(
     "SYNC_DATABASE_URL",
-    f"mysql+pymysql://{os.getenv('DB_USER', 'root')}:{os.getenv('DB_PASSWORD', '')}@{os.getenv('DB_HOST', '127.0.0.1')}:{os.getenv('DB_PORT', '3306')}/{os.getenv('DB_DATABASE', 'ai_assistant')}?charset=utf8mb4",
+    f"mysql+pymysql://{settings.db.USER}:{settings.db.PASSWORD}@{os.getenv('DB_HOST', '127.0.0.1')}:{os.getenv('DB_PORT', '3306')}/{os.getenv('DB_DATABASE', 'ai_assistant')}?charset=utf8mb4",
 )
 config.set_main_option("sqlalchemy.url", sync_url)
 

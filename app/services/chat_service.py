@@ -73,6 +73,7 @@ class ChatService:
 
             async for evt in stream_agent_response(graph, config, input_msg):
                 yield evt.sse
+                print("yield出去的数据流", evt.sse)
 
                 if evt.role == "assistant" and evt.content:
                     pending_ai_content.append(evt.content)
@@ -91,7 +92,7 @@ class ChatService:
                         )
                         pending_ai_content = []
                         pending_tool_calls = []
-
+                    print("存储的message", evt.role, evt.content, evt.name, evt.tool_call_id)
                     await self.msg_repo.create_message(
                         conversation_id,
                         role="tool",
@@ -102,6 +103,7 @@ class ChatService:
 
                 if evt.is_end and (pending_ai_content or pending_tool_calls):
                     full_content = "".join(pending_ai_content)
+                    print("存储的message", full_content, pending_tool_calls)
                     await self.msg_repo.create_message(
                         conversation_id,
                         role="assistant",

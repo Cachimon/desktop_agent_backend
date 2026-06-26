@@ -39,11 +39,14 @@ async def stream_agent_response(
             config=config,
             version="v2",
         ):
+            print("成功调到astream_events了吗", event)
             parsed = _parse_event(event, conversation_id)
+            print("parse成功了吗", parsed)
             if parsed:
                 yield parsed
 
         state = await graph.aget_state(config)
+        print("state是什么", state)
         if state.next:
             hitl_data = {
                 "type": "hitl_required",
@@ -68,6 +71,7 @@ async def stream_agent_response(
             "ns": [],
             "data": {"conversation_id": conversation_id},
         }
+        print("end_data是什么", end_data)
         yield StreamEvent(
             sse=_build_sse("end", end_data),
             is_end=True,
@@ -276,3 +280,5 @@ def _parse_event(event: dict, conversation_id: str) -> StreamEvent | None:
         )
 
     return None
+
+
