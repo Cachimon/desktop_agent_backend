@@ -7,9 +7,19 @@ wheels/
 *.egg-info
 .env
 .codeartsdoer/
-*.md
+
 !README.md
 # Virtual environments
 .venv
 .idea
 keys/*
+
+app/agents/backupcode/*
+
+logs/*
+docs/*
+tests/*
+
+.agents/skills/**/*-workspace/*
+
+*run.py

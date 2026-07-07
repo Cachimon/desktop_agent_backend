@@ -22,9 +22,18 @@ class AuthRepo(BaseRepository[UserAuth]):
         return await self.create(user)
 
     async def create_verification_code(
-        self, email: str, code_hash: str, expires_at: datetime, client_ip: str,
+        self,
+        email: str,
+        code_hash: str,
+        expires_at: datetime,
+        client_ip: str,
     ) -> VerificationCode:
-        vc = VerificationCode(email=email, code_hash=code_hash, expires_at=expires_at, ip_address=client_ip)
+        vc = VerificationCode(
+            email=email,
+            code_hash=code_hash,
+            expires_at=expires_at,
+            ip_address=client_ip,
+        )
         self.session.add(vc)
         await self.session.flush()
         return vc
@@ -74,7 +83,9 @@ class AuthRepo(BaseRepository[UserAuth]):
         return rt
 
     async def get_refresh_token_by_user(self, user_id: int) -> Sequence[RefreshToken]:
-        stmt = select(RefreshToken).where(RefreshToken.user_id == user_id and RefreshToken.revoked_at.is_(None))
+        stmt = select(RefreshToken).where(
+            RefreshToken.user_id == user_id and RefreshToken.revoked_at.is_(None)
+        )
         return await self.get_many(stmt)
 
     async def get_refresh_token_by_hash(self, token_hash: str) -> RefreshToken | None:
@@ -100,18 +111,23 @@ class AuthRepo(BaseRepository[UserAuth]):
     async def get_rate_limit(
         self, identifier: str, action_type: str
     ) -> RateLimit | None:
-        stmt = select(RateLimit).where(
-            and_(RateLimit.identifier == identifier, RateLimit.action_type == action_type)
-        ).order_by(RateLimit.window_start.desc()).limit(1)
+        stmt = (
+            select(RateLimit)
+            .where(
+                and_(
+                    RateLimit.identifier == identifier,
+                    RateLimit.action_type == action_type,
+                )
+            )
+            .order_by(RateLimit.window_start.desc())
+            .limit(1)
+        )
         return await self.get_one(stmt)
 
     async def upsert_rate_limit(
         self, identifier: str, action_type: str, window_start: datetime
     ) -> RateLimit:
         rl = await self.get_rate_limit(identifier, action_type)
-        if rl:
-            print('upsert_rate_limit  window_start', rl.window_start, window_start)
-            print('upsert_rate_limit  attempt_count', rl.attempt_count)
         if rl and rl.window_start >= window_start:
             rl.attempt_count += 1
         else:
@@ -134,13 +150,22 @@ class AuthRepo(BaseRepository[UserAuth]):
     async def count_codes_sent_today(self, email: str) -> int:
         now = datetime.utcnow()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        stmt = select(func.count()).select_from(VerificationCode).where(
-            and_(VerificationCode.email == email, VerificationCode.created_at >= today_start)
+        stmt = (
+            select(func.count())
+            .select_from(VerificationCode)
+            .where(
+                and_(
+                    VerificationCode.email == email,
+                    VerificationCode.created_at >= today_start,
+                )
+            )
         )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 
-    async def count_recent_login_failures(self, email: str, window_minutes: int = 15) -> int:
+    async def count_recent_login_failures(
+        self, email: str, window_minutes: int = 15
+    ) -> int:
         now = datetime.utcnow()
         window_start = now - timedelta(minutes=window_minutes)
         rl = await self.get_rate_limit(email, "login_failure")
@@ -151,11 +176,14 @@ class AuthRepo(BaseRepository[UserAuth]):
     async def count_emails_for_ip(self, ip_address: str, window_hours: int = 1) -> int:
         now = datetime.utcnow()
         window_start = now - timedelta(hours=window_hours)
-        print("count_emails_for_ip window_start", window_start)
-        stmt = select(func.count(VerificationCode.email.distinct())).select_from(VerificationCode).where(
-            and_(
-                VerificationCode.ip_address == ip_address,  # FIX：补上缺失的条件
-                VerificationCode.created_at >= window_start,
+        stmt = (
+            select(func.count(VerificationCode.email.distinct()))
+            .select_from(VerificationCode)
+            .where(
+                and_(
+                    VerificationCode.ip_address == ip_address,  # FIX：补上缺失的条件
+                    VerificationCode.created_at >= window_start,
+                )
             )
         )
         result = await self.session.execute(stmt)

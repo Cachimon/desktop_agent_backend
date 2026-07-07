@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="DB_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     HOST: str = "127.0.0.1"
     PORT: int = 3306
@@ -25,7 +27,9 @@ class DatabaseSettings(BaseSettings):
 
 
 class AuthSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AUTH_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="AUTH_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     JWT_PRIVATE_KEY_PATH: str = ""
     JWT_PUBLIC_KEY_PATH: str = ""
@@ -54,17 +58,22 @@ class AuthSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     MODEL_NAME: str = "gpt-4o-mini"
     API_KEY: str = ""
     API_BASE: str | None = None
     TEMPERATURE: float = 0.1
     MAX_TOKENS: int = 4096
+    MODEL_PROVIDER: str = "openai"
 
 
 class AgentSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AGENT_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="AGENT_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     SKILLS_DIR: str = ".agents/skills"
     SANDBOX_TIMEOUT_SECONDS: int = 30
@@ -76,7 +85,9 @@ class AgentSettings(BaseSettings):
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="APP_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     HOST: str = "127.0.0.1"
     PORT: int = 8000
@@ -87,12 +98,16 @@ class AppSettings(BaseSettings):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     db: DatabaseSettings = DatabaseSettings()
     auth: AuthSettings = AuthSettings()
     llm: LLMSettings = LLMSettings()
-    agent: AgentSettings = AgentSettings()
+    agent_cfg: AgentSettings = AgentSettings()
     app: AppSettings = AppSettings()
 
 

@@ -1,10 +1,12 @@
 import asyncio
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any
 
 from fastapi import FastAPI
+from langchain_core.messages import HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.state import AgentState
 from app.agents.streaming import (
     StreamEvent,
     stream_agent_response,
@@ -37,11 +39,11 @@ class ChatService:
         message: str,
         user_id: str,
         skill_hint: str | None = None,
+        interrupt_id: str | None = None,
     ) -> AsyncGenerator[str, None]:
         conv = await self.conv_repo.get_by_id(conversation_id)
         if not conv or conv.user_id != user_id:
             raise ConversationNotFound(message="Conversation not found")
-
         if conversation_id not in _active_streams:
             _active_streams[conversation_id] = asyncio.Lock()
 
@@ -50,9 +52,7 @@ class ChatService:
             raise ConversationBusy(message="Conversation is already being processed")
 
         async with lock:
-            await self.msg_repo.create_message(
-                conversation_id, role="user", content=message
-            )
+            print("用户指令", message)
             logger.info(
                 "chat_stream_start", conversation_id=conversation_id, user_id=user_id
             )
@@ -61,63 +61,40 @@ class ChatService:
             config = {
                 "configurable": {"thread_id": conversation_id},
             }
-            input_msg = {
-                "messages": [{"role": "user", "content": message}],
-                "conversation_id": conversation_id,
-                "user_id": user_id,
-                "skill_hint": skill_hint,
-            }
+            input_msg: AgentState | dict[str, Any]
+            if interrupt_id:
+                input_msg = {
+                    interrupt_id: {
+                        "decision": message,
+                    },
+                }
+            else:
 
-            pending_ai_content: list[str] = []
-            pending_tool_calls: list[dict] = []
+                input_msg = AgentState(
+                    messages=[HumanMessage(content=message)],
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    skill_hint=skill_hint,
+                    check_skill_hint=False,
+                    loaded_skill=False,
+                    pending_confirm=None,
+                    error=None,
+                    guide=None,
+                )
 
-            async for evt in stream_agent_response(graph, config, input_msg):
+            async for evt in stream_agent_response(graph, config, input_msg, conversation_id, interrupt_id):
                 yield evt.sse
-                print("yield出去的数据流", evt.sse)
 
-                if evt.role == "assistant" and evt.content:
-                    pending_ai_content.append(evt.content)
+                if evt.is_end:
+                    return
 
-                if evt.role == "assistant" and evt.tool_calls:
-                    pending_tool_calls = evt.tool_calls
-
-                if evt.role == "tool":
-                    if pending_ai_content or pending_tool_calls:
-                        full_content = "".join(pending_ai_content)
-                        await self.msg_repo.create_message(
-                            conversation_id,
-                            role="assistant",
-                            content=full_content,
-                            tool_calls=pending_tool_calls or None,
-                        )
-                        pending_ai_content = []
-                        pending_tool_calls = []
-                    print("存储的message", evt.role, evt.content, evt.name, evt.tool_call_id)
-                    await self.msg_repo.create_message(
-                        conversation_id,
-                        role="tool",
-                        content=evt.content,
-                        name=evt.name,
-                        tool_call_id=evt.tool_call_id or None,
-                    )
-
-                if evt.is_end and (pending_ai_content or pending_tool_calls):
-                    full_content = "".join(pending_ai_content)
-                    print("存储的message", full_content, pending_tool_calls)
-                    await self.msg_repo.create_message(
-                        conversation_id,
-                        role="assistant",
-                        content=full_content,
-                        tool_calls=pending_tool_calls or None,
-                    )
 
     async def confirm_hitl_stream(
-        self,
-        conversation_id: str,
-        checkpoint_id: str,
-        decision: str,
-        context: dict | None,
-        user_id: str,
+            self,
+            conversation_id: str,
+            interrupt_id: str,
+            decision: str,
+            user_id: str,
     ) -> AsyncGenerator[str, None]:
         conv = await self.conv_repo.get_by_id(conversation_id)
         if not conv or conv.user_id != user_id:
@@ -129,8 +106,7 @@ class ChatService:
             operation=operation,
             details={
                 "decision": decision,
-                "context": context,
-                "checkpoint_id": checkpoint_id,
+                "interrupt_id": interrupt_id,
             },
             user_id=user_id,
             risk_level="medium" if decision == "approve" else "low",
@@ -142,73 +118,17 @@ class ChatService:
             conversation_id=conversation_id,
             decision=decision,
             user_id=user_id,
+            interrupt_id=interrupt_id,
         )
-
-        if decision == "reject":
-            await self.msg_repo.create_message(
-                conversation_id,
-                role="assistant",
-                content="Operation rejected by user.",
-            )
-            reject_chunk = {
-                "type": "hitl_rejected",
-                "ns": ["main_agent"],
-                "data": {
-                    "conversation_id": conversation_id,
-                    "decision": "reject",
-                },
-            }
-            yield f"event: message\ndata: {json.dumps(reject_chunk, ensure_ascii=False)}\n\n"
-            end_chunk = {
-                "type": "end",
-                "ns": [],
-                "data": {"conversation_id": conversation_id, "reason": "user_rejected"},
-            }
-            yield f"event: end\ndata: {json.dumps(end_chunk, ensure_ascii=False)}\n\n"
-            return
 
         graph = self.app.state.graph
         config = {
             "configurable": {"thread_id": conversation_id},
         }
 
-        pending_ai_content: list[str] = []
-        pending_tool_calls: list[dict] = []
-
-        async for evt in stream_resume_response(graph, config, decision, context):
+        async for evt in stream_resume_response(graph, config, decision, interrupt_id, conversation_id):
             yield evt.sse
 
-            if evt.role == "assistant" and evt.content:
-                pending_ai_content.append(evt.content)
+            if evt.is_end:
+                return
 
-            if evt.role == "assistant" and evt.tool_calls:
-                pending_tool_calls = evt.tool_calls
-
-            if evt.role == "tool":
-                if pending_ai_content or pending_tool_calls:
-                    full_content = "".join(pending_ai_content)
-                    await self.msg_repo.create_message(
-                        conversation_id,
-                        role="assistant",
-                        content=full_content,
-                        tool_calls=pending_tool_calls or None,
-                    )
-                    pending_ai_content = []
-                    pending_tool_calls = []
-
-                await self.msg_repo.create_message(
-                    conversation_id,
-                    role="tool",
-                    content=evt.content,
-                    name=evt.name,
-                    tool_call_id=evt.tool_call_id or None,
-                )
-
-            if evt.is_end and (pending_ai_content or pending_tool_calls):
-                full_content = "".join(pending_ai_content)
-                await self.msg_repo.create_message(
-                    conversation_id,
-                    role="assistant",
-                    content=full_content,
-                    tool_calls=pending_tool_calls or None,
-                )

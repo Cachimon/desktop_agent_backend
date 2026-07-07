@@ -8,10 +8,10 @@ class ChatStreamRequest(BaseModel):
     message: str
     skill_hint: str | None = None
     stream_mode: str = "messages"
+    interrupt_id: str | None = None
 
 
 class HITLConfirmRequest(BaseModel):
     conversation_id: str
-    checkpoint_id: str
+    interrupt_id: str
     decision: Literal["approve", "reject"]
-    context: dict | None = None

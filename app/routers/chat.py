@@ -23,6 +23,7 @@ async def chat_stream(
         message=body.message,
         user_id=user["sub"],
         skill_hint=body.skill_hint,
+        interrupt_id=body.interrupt_id,
     )
     return StreamingResponse(
         generator,
@@ -45,9 +46,8 @@ async def hitl_confirm(
     svc = ChatService(session, request.app)
     generator = svc.confirm_hitl_stream(
         conversation_id=body.conversation_id,
-        checkpoint_id=body.checkpoint_id,
+        interrupt_id=body.interrupt_id,
         decision=body.decision,
-        context=body.context,
         user_id=user["sub"],
     )
     return StreamingResponse(

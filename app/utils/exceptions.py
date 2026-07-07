@@ -1,3 +1,5 @@
+from typing import Literal
+
 from app.utils.trace import get_trace_id
 
 
@@ -44,9 +46,11 @@ class HITLRequiredError(AppException):
         action: str = "",
         message: str = "",
         context: dict | None = None,
+        type: Literal["confirm"] = 'confirm'
     ):
         self.action = action
         self.context = context or {}
+        self.type = type
         super().__init__(message=message, detail={"action": action, **self.context})
 
 
